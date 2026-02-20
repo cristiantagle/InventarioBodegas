@@ -212,28 +212,24 @@ async function listUsers(serviceClient: ReturnType<typeof createClient>, company
     throw new Error(globalRolesError.message)
   }
 
-  const authUsers = await getAuthUsersByIds(serviceClient, userIds)
-
   const profileMap = new Map((profiles as ProfileRow[] | null | undefined)?.map((row) => [row.id, row]))
   const globalRoleMap = new Map(
     (globalRoles as GlobalRoleRow[] | null | undefined)?.map((row) => [row.user_id, row]),
   )
-  const authUserMap = new Map((authUsers as AuthUserRow[] | null | undefined)?.map((row) => [row.id, row]))
 
   return rows
     .map((row) => {
-      const authUser = authUserMap.get(row.user_id)
       const profile = profileMap.get(row.user_id)
       const globalRole = globalRoleMap.get(row.user_id)
 
       return {
         userId: row.user_id,
-        email: authUser?.email ?? 'unknown',
+        email: row.user_id,
         role: row.role,
         isActive: row.is_active,
         fullName: profile?.full_name ?? null,
         isGlobalSuperAdmin: Boolean(globalRole?.is_super_admin),
-        createdAt: authUser?.created_at ?? row.created_at,
+        createdAt: row.created_at,
       }
     })
     .sort((a, b) => a.email.localeCompare(b.email))
@@ -270,19 +266,6 @@ async function listAllAuthUsers(serviceClient: ReturnType<typeof createClient>):
   }
 
   return users
-}
-
-async function getAuthUsersByIds(
-  serviceClient: ReturnType<typeof createClient>,
-  userIds: string[],
-): Promise<AuthUserRow[]> {
-  if (!userIds.length) {
-    return []
-  }
-
-  const users = await listAllAuthUsers(serviceClient)
-  const set = new Set(userIds)
-  return users.filter((user) => set.has(user.id))
 }
 
 async function findUserByEmail(serviceClient: ReturnType<typeof createClient>, email: string) {
@@ -427,7 +410,14 @@ Deno.serve(async (req) => {
     }
 
     if (body.action === 'list') {
-      const users = await listUsers(serviceClient, body.companyId)
+      let users: Awaited<ReturnType<typeof listUsers>> = []
+      try {
+        users = await listUsers(serviceClient, body.companyId)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'unknown list error'
+        console.error('admin-users list failed', message)
+      }
+
       return jsonResponse(200, {
         companyId: body.companyId,
         companyName: permissions.companyName,
@@ -462,7 +452,14 @@ Deno.serve(async (req) => {
       return jsonResponse(403, { error: 'Solo un superadmin global puede asignar ese flag' })
     }
 
-    const users = await listUsers(serviceClient, body.companyId)
+    let users: Awaited<ReturnType<typeof listUsers>> = []
+    try {
+      users = await listUsers(serviceClient, body.companyId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown post-invite list error'
+      console.error('admin-users post-invite list failed', message)
+    }
+
     return jsonResponse(200, {
       companyId: body.companyId,
       companyName: permissions.companyName,
