@@ -43,14 +43,15 @@ async function invokeAdminUsers<T>(payload: Record<string, unknown>): Promise<T>
     data: { session },
   } = await client.auth.getSession()
 
-  const headers: Record<string, string> = {}
-  if (session?.access_token) {
-    headers.Authorization = `Bearer ${session.access_token}`
+  if (!session?.access_token) {
+    throw new Error('Sesion expirada. Inicie sesion nuevamente.')
   }
 
   const { data, error } = await client.functions.invoke('admin-users', {
-    body: payload,
-    headers,
+    body: {
+      ...payload,
+      accessToken: session.access_token,
+    },
   })
 
   if (error) {
@@ -63,7 +64,7 @@ async function invokeAdminUsers<T>(payload: Record<string, unknown>): Promise<T>
           'error' in responseBody &&
           typeof responseBody.error === 'string'
         ) {
-          throw new Error(responseBody.error)
+          return Promise.reject(new Error(responseBody.error))
         }
       } catch {
         // fallback below

@@ -98,6 +98,24 @@ function parseRequestBody(payload: unknown): RequestBody | null {
   return null
 }
 
+function resolveAuthHeader(req: Request, payload: unknown): string | null {
+  const headerValue = req.headers.get('Authorization')
+  if (headerValue?.startsWith('Bearer ')) {
+    return headerValue
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    return null
+  }
+
+  const maybeToken = (payload as { accessToken?: unknown }).accessToken
+  if (typeof maybeToken === 'string' && maybeToken.trim().length > 0) {
+    return `Bearer ${maybeToken.trim()}`
+  }
+
+  return null
+}
+
 async function resolveCallerId(authHeader: string, supabaseUrl: string, anonKey: string) {
   const callerClient = createClient(supabaseUrl, anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -194,15 +212,7 @@ async function listUsers(serviceClient: ReturnType<typeof createClient>, company
     throw new Error(globalRolesError.message)
   }
 
-  const { data: authUsers, error: authUsersError } = await serviceClient
-    .schema('auth')
-    .from('users')
-    .select('id, email, created_at')
-    .in('id', userIds)
-
-  if (authUsersError) {
-    throw new Error(authUsersError.message)
-  }
+  const authUsers = await getAuthUsersByIds(serviceClient, userIds)
 
   const profileMap = new Map((profiles as ProfileRow[] | null | undefined)?.map((row) => [row.id, row]))
   const globalRoleMap = new Map(
@@ -229,20 +239,55 @@ async function listUsers(serviceClient: ReturnType<typeof createClient>, company
     .sort((a, b) => a.email.localeCompare(b.email))
 }
 
-async function findUserByEmail(serviceClient: ReturnType<typeof createClient>, email: string) {
-  const { data, error } = await serviceClient
-    .schema('auth')
-    .from('users')
-    .select('id, email, created_at')
-    .ilike('email', email)
-    .limit(1)
+async function listAllAuthUsers(serviceClient: ReturnType<typeof createClient>): Promise<AuthUserRow[]> {
+  const perPage = 200
+  let page = 1
+  const users: AuthUserRow[] = []
 
-  if (error) {
-    throw new Error(error.message)
+  while (true) {
+    const { data, error } = await serviceClient.auth.admin.listUsers({
+      page,
+      perPage,
+    })
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    const pageUsers = data?.users ?? []
+    users.push(
+      ...pageUsers.map((user) => ({
+        id: user.id,
+        email: user.email ?? null,
+        created_at: user.created_at ?? new Date().toISOString(),
+      })),
+    )
+
+    if (pageUsers.length < perPage) {
+      break
+    }
+    page += 1
   }
 
-  const rows = (data ?? []) as AuthUserRow[]
-  return rows[0] ?? null
+  return users
+}
+
+async function getAuthUsersByIds(
+  serviceClient: ReturnType<typeof createClient>,
+  userIds: string[],
+): Promise<AuthUserRow[]> {
+  if (!userIds.length) {
+    return []
+  }
+
+  const users = await listAllAuthUsers(serviceClient)
+  const set = new Set(userIds)
+  return users.filter((user) => set.has(user.id))
+}
+
+async function findUserByEmail(serviceClient: ReturnType<typeof createClient>, email: string) {
+  const users = await listAllAuthUsers(serviceClient)
+  return users.find((user) => user.email?.toLowerCase() === email.toLowerCase()) ?? null
 }
 
 async function inviteOrActivateUser(
@@ -341,8 +386,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
+    const bodyRaw = await req.json().catch(() => null)
+    const authHeader = resolveAuthHeader(req, bodyRaw)
+    if (!authHeader) {
       return jsonResponse(401, { error: 'Missing bearer token' })
     }
 
@@ -354,7 +400,6 @@ Deno.serve(async (req) => {
     })
 
     const callerId = await resolveCallerId(authHeader, supabaseUrl, anonKey)
-    const bodyRaw = await req.json().catch(() => null)
     const body = parseRequestBody(bodyRaw)
 
     if (!body) {
@@ -427,6 +472,7 @@ Deno.serve(async (req) => {
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unhandled error'
+    console.error('admin-users error', message)
     if (message === 'UNAUTHORIZED') {
       return jsonResponse(401, { error: 'Token invalido o expirado' })
     }
