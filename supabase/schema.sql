@@ -186,6 +186,8 @@ create or replace function public.is_super_admin()
 returns boolean
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select exists (
     select 1
@@ -199,6 +201,8 @@ create or replace function public.has_company_access(target_company uuid)
 returns boolean
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select
     public.is_super_admin()
@@ -215,6 +219,8 @@ create or replace function public.has_company_role(target_company uuid, roles pu
 returns boolean
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select
     public.is_super_admin()

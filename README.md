@@ -44,6 +44,11 @@ Copiar `.env.example` y completar:
 1. Ejecutar `supabase/schema.sql`.
 2. Ejecutar `supabase/seed.sql`.
 3. Reemplazar UUID de usuarios seed por `auth.users` reales.
+4. Desplegar Edge Function de gestion de usuarios:
+   - `supabase functions deploy admin-users --project-ref <project_ref>`
+5. Verificar que tu usuario tenga:
+   - `company_memberships.role = SUPERADMIN` en su empresa
+   - `global_roles.is_super_admin = true` si quieres permiso global
 
 ## Flujo operativo
 1. Cargar inventario inicial (INITIAL aprobado).
@@ -52,3 +57,10 @@ Copiar `.env.example` y completar:
 4. Ejecutar conteo ciclico (genera ADJUST PENDING si hay diferencia).
 5. Aprobar/rechazar ADJUST/SCRAP por Supervisor/Admin/SuperAdmin.
 6. Exportar reportes (Excel/CSV/PDF).
+
+## Gestion de usuarios desde app
+- Inicia sesion en el bloque `Sesion Supabase` (email/password).
+- Ve a la pestana `Usuarios`.
+- Selecciona empresa y usa `Invitar o activar`.
+- Si el usuario no existe, se envia invitacion por email.
+- Si ya existe, se reactiva/actualiza rol en la empresa.

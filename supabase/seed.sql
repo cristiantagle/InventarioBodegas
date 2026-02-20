@@ -7,16 +7,27 @@ insert into public.companies (id, name, legal_name)
 values ('11111111-1111-1111-1111-111111111111', 'Bodega Central', 'Bodega Central SpA')
 on conflict (id) do nothing;
 
+-- Optional user-role seeds. These rows are only inserted if users already exist in auth.users.
 insert into public.global_roles (user_id, is_super_admin)
-values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', true)
+select 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, true
+where exists (
+  select 1 from auth.users where id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid
+)
 on conflict (user_id) do update set is_super_admin = excluded.is_super_admin;
 
+with desired_members as (
+  select * from (
+    values
+      ('11111111-1111-1111-1111-111111111111'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 'SUPERADMIN'::public.app_role, true),
+      ('11111111-1111-1111-1111-111111111111'::uuid, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 'ADMIN'::public.app_role, true),
+      ('11111111-1111-1111-1111-111111111111'::uuid, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 'SUPERVISOR'::public.app_role, true),
+      ('11111111-1111-1111-1111-111111111111'::uuid, 'dddddddd-dddd-dddd-dddd-dddddddddddd'::uuid, 'BODEGUERO'::public.app_role, true)
+  ) as x(company_id, user_id, role, is_active)
+)
 insert into public.company_memberships (company_id, user_id, role, is_active)
-values
-  ('11111111-1111-1111-1111-111111111111', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'SUPERADMIN', true),
-  ('11111111-1111-1111-1111-111111111111', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'ADMIN', true),
-  ('11111111-1111-1111-1111-111111111111', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'SUPERVISOR', true),
-  ('11111111-1111-1111-1111-111111111111', 'dddddddd-dddd-dddd-dddd-dddddddddddd', 'BODEGUERO', true)
+select dm.company_id, dm.user_id, dm.role, dm.is_active
+from desired_members dm
+join auth.users u on u.id = dm.user_id
 on conflict (company_id, user_id) do nothing;
 
 insert into public.locations (id, company_id, code, name, zone)
@@ -42,7 +53,7 @@ on conflict (company_id, lot_code) do nothing;
 
 insert into public.work_orders (id, company_id, code, responsible, cost_center, status, notes, created_by)
 values
-  ('40000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'OT-20260219-001', 'Paula Rojas', 'CC-PINTURA', 'IN_PROGRESS', 'Lote piloto P-778', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')
+  ('40000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'OT-20260219-001', 'Paula Rojas', 'CC-PINTURA', 'IN_PROGRESS', 'Lote piloto P-778', null)
 on conflict (company_id, code) do nothing;
 
 insert into public.kardex_movements (
@@ -54,9 +65,9 @@ values (
   'INITIAL',
   'APPROVED',
   'Inventario inicial',
-  'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  null,
   'ADMIN',
-  'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  null,
   'ADMIN',
   now(),
   'Carga inicial de semilla'

@@ -1,5 +1,16 @@
 import { useMemo, useState } from 'react'
-import { Box, ClipboardCheck, FileDown, QrCode, RefreshCcw } from 'lucide-react'
+import {
+  Box,
+  ClipboardCheck,
+  FileDown,
+  KeyRound,
+  LogOut,
+  QrCode,
+  RefreshCcw,
+  ShieldCheck,
+  UserRoundPlus,
+  UsersRound,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -13,6 +24,8 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { Toaster } from '@/components/ui/sonner'
+import { useAdminUsers } from '@/hooks/use-admin-users'
+import { useSupabaseAuth } from '@/hooks/use-supabase-auth'
 import { useWarehouseApp } from '@/hooks/use-warehouse-app'
 import { countOpenOt, isExpired, listExpiringLots, movementLabel } from '@/lib/warehouse-engine'
 import {
@@ -43,6 +56,8 @@ function App() {
     createWorkOrder,
     reconcileStock,
   } = useWarehouseApp()
+  const auth = useSupabaseAuth()
+  const adminUsers = useAdminUsers(auth.user)
 
   const [tab, setTab] = useState('resumen')
   const [qrRaw, setQrRaw] = useState('')
@@ -65,6 +80,16 @@ function App() {
   const [otCostCenter, setOtCostCenter] = useState('')
 
   const [reconcileSummary, setReconcileSummary] = useState('')
+
+  const [loginEmail, setLoginEmail] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
+  const [authBusy, setAuthBusy] = useState(false)
+
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteFullName, setInviteFullName] = useState('')
+  const [inviteRole, setInviteRole] = useState<Role>('BODEGUERO')
+  const [inviteGlobalSuperAdmin, setInviteGlobalSuperAdmin] = useState(false)
+  const [inviteBusy, setInviteBusy] = useState(false)
 
   const expiring = useMemo(() => listExpiringLots(state, 30), [state])
 
@@ -134,6 +159,67 @@ function App() {
     setReconcileSummary(result.balanced ? 'BALANCED' : `MISMATCH (${result.mismatches.length})`)
   }
 
+  async function onSignIn() {
+    if (!loginEmail.trim() || !loginPassword.trim()) {
+      toast.error('Ingrese email y password')
+      return
+    }
+
+    setAuthBusy(true)
+    try {
+      await auth.signIn(loginEmail, loginPassword)
+      toast.success('Sesion iniciada')
+      setLoginPassword('')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo iniciar sesion')
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  async function onSignOut() {
+    setAuthBusy(true)
+    try {
+      await auth.signOut()
+      toast.success('Sesion cerrada')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo cerrar sesion')
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  async function onInviteUser() {
+    if (!inviteEmail.trim()) {
+      toast.error('Email obligatorio')
+      return
+    }
+
+    setInviteBusy(true)
+    try {
+      const result = await adminUsers.inviteUser({
+        email: inviteEmail,
+        fullName: inviteFullName,
+        role: inviteRole,
+        isGlobalSuperAdmin: inviteGlobalSuperAdmin,
+      })
+
+      toast.success(
+        result.invited
+          ? `Invitacion enviada a ${result.email}`
+          : `Usuario ${result.email} actualizado`,
+      )
+      setInviteEmail('')
+      setInviteFullName('')
+      setInviteRole('BODEGUERO')
+      setInviteGlobalSuperAdmin(false)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo invitar usuario')
+    } finally {
+      setInviteBusy(false)
+    }
+  }
+
   return (
     <div className="mx-auto min-h-screen w-full max-w-5xl px-3 pb-20 pt-4">
       <header className="mb-4 rounded-2xl border bg-card/80 p-4">
@@ -148,6 +234,63 @@ function App() {
           </Select>
         </div>
       </header>
+
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle className="text-base">Sesion Supabase</CardTitle>
+          <CardDescription>Necesaria para gestionar usuarios desde SuperAdmin.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!auth.isConfigured && (
+            <Alert variant="destructive">
+              <AlertTitle>Supabase no configurado</AlertTitle>
+              <AlertDescription>Defina VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.</AlertDescription>
+            </Alert>
+          )}
+
+          {auth.isConfigured && auth.loading && (
+            <p className="text-sm text-muted-foreground">Verificando sesion actual...</p>
+          )}
+
+          {auth.isConfigured && !auth.loading && !auth.user && (
+            <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+              <Input
+                type="email"
+                placeholder="Email"
+                value={loginEmail}
+                onChange={(event) => setLoginEmail(event.target.value)}
+              />
+              <Input
+                type="password"
+                placeholder="Password"
+                value={loginPassword}
+                onChange={(event) => setLoginPassword(event.target.value)}
+              />
+              <Button onClick={onSignIn} disabled={authBusy}>
+                <KeyRound className="mr-2 h-4 w-4" />
+                {authBusy ? 'Ingresando...' : 'Ingresar'}
+              </Button>
+            </div>
+          )}
+
+          {auth.isConfigured && auth.user && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="secondary">{auth.user.email ?? auth.user.id}</Badge>
+              {adminUsers.isGlobalSuperAdmin && (
+                <Badge className="bg-emerald-700 hover:bg-emerald-700">
+                  <ShieldCheck className="mr-1 h-3 w-3" />
+                  Global SuperAdmin
+                </Badge>
+              )}
+              {adminUsers.companyRole && <Badge variant="outline">Rol empresa: {adminUsers.companyRole}</Badge>}
+              <Button size="sm" variant="secondary" onClick={onSignOut} disabled={authBusy}>
+                <LogOut className="mr-2 h-4 w-4" />
+                Salir
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Tabs value={tab} onValueChange={setTab} className="space-y-4">
         <TabsContent value="resumen" className="space-y-4">
@@ -305,11 +448,178 @@ function App() {
           </Card>
         </TabsContent>
 
-        <TabsList className="fixed bottom-2 left-1/2 grid w-[min(96vw,840px)] -translate-x-1/2 grid-cols-4 rounded-2xl border bg-background/95 p-1 shadow-lg">
+        <TabsContent value="usuarios" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Gestion de usuarios</CardTitle>
+              <CardDescription>
+                Alta e invitacion por empresa desde SuperAdmin via Edge Function.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {!auth.isConfigured && (
+                <Alert variant="destructive">
+                  <AlertTitle>Supabase no configurado</AlertTitle>
+                  <AlertDescription>Configure variables de entorno y recargue la app.</AlertDescription>
+                </Alert>
+              )}
+
+              {auth.isConfigured && !auth.user && !auth.loading && (
+                <Alert>
+                  <AlertTitle>Inicie sesion</AlertTitle>
+                  <AlertDescription>Use su cuenta SuperAdmin para administrar usuarios.</AlertDescription>
+                </Alert>
+              )}
+
+              {auth.user && (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+                    <Select
+                      value={adminUsers.selectedCompanyId}
+                      onValueChange={adminUsers.setSelectedCompanyId}
+                      disabled={adminUsers.loadingCompanies}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Empresa" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {adminUsers.companies.map((company) => (
+                          <SelectItem key={company.id} value={company.id}>
+                            {company.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        void adminUsers.refreshCompanies()
+                      }}
+                      disabled={adminUsers.loadingCompanies}
+                    >
+                      Empresas
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        void adminUsers.refreshUsers()
+                      }}
+                      disabled={adminUsers.loadingUsers || !adminUsers.canManageUsers}
+                    >
+                      Usuarios
+                    </Button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {adminUsers.selectedCompanyName && (
+                      <Badge variant="outline">Empresa: {adminUsers.selectedCompanyName}</Badge>
+                    )}
+                    {adminUsers.companyRole && <Badge variant="outline">Rol: {adminUsers.companyRole}</Badge>}
+                    {adminUsers.isGlobalSuperAdmin && (
+                      <Badge className="bg-emerald-700 hover:bg-emerald-700">Global SuperAdmin</Badge>
+                    )}
+                  </div>
+
+                  {!adminUsers.canManageUsers && (
+                    <Alert variant="destructive">
+                      <AlertTitle>No autorizado</AlertTitle>
+                      <AlertDescription>
+                        Debe tener rol SUPERADMIN de empresa o superadmin global.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  {adminUsers.canManageUsers && (
+                    <div className="grid gap-3 rounded-lg border p-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Input
+                          placeholder="Email usuario"
+                          value={inviteEmail}
+                          onChange={(event) => setInviteEmail(event.target.value)}
+                        />
+                        <Input
+                          placeholder="Nombre completo (opcional)"
+                          value={inviteFullName}
+                          onChange={(event) => setInviteFullName(event.target.value)}
+                        />
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                        <Select value={inviteRole} onValueChange={(value) => setInviteRole(value as Role)}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Rol" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {roles.map((role) => (
+                              <SelectItem key={role} value={role}>
+                                {role}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {adminUsers.isGlobalSuperAdmin && (
+                          <div className="flex items-center gap-2 rounded-md border px-3">
+                            <Switch
+                              checked={inviteGlobalSuperAdmin}
+                              onCheckedChange={setInviteGlobalSuperAdmin}
+                            />
+                            <Label>Global superadmin</Label>
+                          </div>
+                        )}
+                      </div>
+
+                      <Button
+                        onClick={() => {
+                          void onInviteUser()
+                        }}
+                        disabled={inviteBusy}
+                      >
+                        <UserRoundPlus className="mr-2 h-4 w-4" />
+                        {inviteBusy ? 'Procesando...' : 'Invitar o activar'}
+                      </Button>
+                    </div>
+                  )}
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Usuarios de empresa</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {adminUsers.loadingUsers && (
+                        <p className="text-sm text-muted-foreground">Cargando usuarios...</p>
+                      )}
+                      {!adminUsers.loadingUsers && !adminUsers.users.length && (
+                        <p className="text-sm text-muted-foreground">Sin usuarios para mostrar.</p>
+                      )}
+                      {adminUsers.users.map((entry) => (
+                        <div key={entry.userId} className="rounded-lg border p-3">
+                          <p className="text-sm font-semibold">{entry.email}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {entry.fullName ?? 'Sin nombre'} | {entry.userId}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Badge variant="outline">{entry.role}</Badge>
+                            {!entry.isActive && <Badge variant="destructive">Inactivo</Badge>}
+                            {entry.isGlobalSuperAdmin && (
+                              <Badge className="bg-emerald-700 hover:bg-emerald-700">Global SuperAdmin</Badge>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsList className="fixed bottom-2 left-1/2 grid w-[min(98vw,980px)] -translate-x-1/2 grid-cols-5 rounded-2xl border bg-background/95 p-1 shadow-lg">
           <TabsTrigger value="resumen"><Box className="mr-1 h-3.5 w-3.5" />Resumen</TabsTrigger>
           <TabsTrigger value="operar"><QrCode className="mr-1 h-3.5 w-3.5" />Operar</TabsTrigger>
           <TabsTrigger value="aprobar"><ClipboardCheck className="mr-1 h-3.5 w-3.5" />Aprobar</TabsTrigger>
           <TabsTrigger value="reportes"><FileDown className="mr-1 h-3.5 w-3.5" />Reportes</TabsTrigger>
+          <TabsTrigger value="usuarios"><UsersRound className="mr-1 h-3.5 w-3.5" />Usuarios</TabsTrigger>
         </TabsList>
       </Tabs>
 
