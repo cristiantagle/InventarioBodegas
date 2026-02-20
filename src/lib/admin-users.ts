@@ -24,6 +24,7 @@ export interface InviteCompanyUserInput {
   role: Role
   fullName?: string
   isGlobalSuperAdmin?: boolean
+  redirectTo?: string
 }
 
 export interface InviteCompanyUserResponse extends AdminUsersListResponse {
@@ -94,6 +95,12 @@ export async function listCompanyUsers(companyId: string): Promise<AdminUsersLis
 export async function inviteCompanyUser(
   input: InviteCompanyUserInput,
 ): Promise<InviteCompanyUserResponse> {
+  const redirectTo =
+    input.redirectTo ??
+    (typeof window !== 'undefined'
+      ? `${window.location.origin}/`
+      : 'https://inventario-bodegas.vercel.app/')
+
   return invokeAdminUsers<InviteCompanyUserResponse>({
     action: 'invite',
     companyId: input.companyId,
@@ -101,5 +108,6 @@ export async function inviteCompanyUser(
     role: input.role,
     fullName: input.fullName,
     isGlobalSuperAdmin: input.isGlobalSuperAdmin ?? false,
+    redirectTo,
   })
 }

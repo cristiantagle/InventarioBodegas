@@ -14,6 +14,7 @@ type InviteUserRequest = {
   role: AppRole
   fullName?: string
   isGlobalSuperAdmin?: boolean
+  redirectTo?: string
 }
 
 type RequestBody = ListUsersRequest | InviteUserRequest
@@ -92,6 +93,7 @@ function parseRequestBody(payload: unknown): RequestBody | null {
       fullName: typeof body.fullName === 'string' ? body.fullName : undefined,
       isGlobalSuperAdmin:
         typeof body.isGlobalSuperAdmin === 'boolean' ? body.isGlobalSuperAdmin : undefined,
+      redirectTo: typeof body.redirectTo === 'string' ? body.redirectTo : undefined,
     }
   }
 
@@ -293,9 +295,28 @@ async function inviteOrActivateUser(
 
   let user = await findUserByEmail(serviceClient, email)
   let invited = false
+  const fallbackRedirect =
+    Deno.env.get('APP_SITE_URL') ?? Deno.env.get('SITE_URL') ?? 'https://inventario-bodegas.vercel.app/'
+
+  let redirectTo = fallbackRedirect
+  if (payload.redirectTo && payload.redirectTo.trim().length > 0) {
+    try {
+      const candidate = new URL(payload.redirectTo)
+      if (candidate.protocol === 'https:' || candidate.hostname === 'localhost') {
+        redirectTo = candidate.toString()
+      }
+    } catch {
+      // fallback redirect is used
+    }
+  }
 
   if (!user) {
-    const { data: invitedData, error: inviteError } = await serviceClient.auth.admin.inviteUserByEmail(email)
+    const { data: invitedData, error: inviteError } = await serviceClient.auth.admin.inviteUserByEmail(
+      email,
+      {
+        redirectTo,
+      },
+    )
     if (inviteError || !invitedData.user?.id) {
       throw new Error(inviteError?.message ?? 'FAILED_TO_INVITE_USER')
     }

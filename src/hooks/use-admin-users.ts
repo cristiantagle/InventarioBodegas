@@ -14,6 +14,7 @@ export interface InviteFormInput {
   role: Role
   fullName?: string
   isGlobalSuperAdmin?: boolean
+  redirectTo?: string
 }
 
 type CompanyMembershipRole = {
@@ -164,6 +165,7 @@ export function useAdminUsers(user: User | null): UseAdminUsersState {
       role: input.role,
       fullName: input.fullName,
       isGlobalSuperAdmin: input.isGlobalSuperAdmin,
+      redirectTo: input.redirectTo,
     })
 
     setUsers(response.users)
