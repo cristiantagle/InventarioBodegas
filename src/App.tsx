@@ -89,7 +89,10 @@ function App() {
   const [inviteFullName, setInviteFullName] = useState('')
   const [inviteRole, setInviteRole] = useState<Role>('BODEGUERO')
   const [inviteGlobalSuperAdmin, setInviteGlobalSuperAdmin] = useState(false)
-  const [inviteBusy, setInviteBusy] = useState(false)
+  const [createPassword, setCreatePassword] = useState('')
+  const [userActionMode, setUserActionMode] = useState<'invite' | 'create'>('invite')
+  const [userActionBusy, setUserActionBusy] = useState(false)
+  const [resendBusyEmail, setResendBusyEmail] = useState<string | null>(null)
 
   const expiring = useMemo(() => listExpiringLots(state, 30), [state])
 
@@ -189,34 +192,91 @@ function App() {
     }
   }
 
-  async function onInviteUser() {
+  async function onSubmitUserAction() {
     if (!inviteEmail.trim()) {
       toast.error('Email obligatorio')
       return
     }
 
-    setInviteBusy(true)
-    try {
-      const result = await adminUsers.inviteUser({
-        email: inviteEmail,
-        fullName: inviteFullName,
-        role: inviteRole,
-        isGlobalSuperAdmin: inviteGlobalSuperAdmin,
-      })
+    if (userActionMode === 'create' && createPassword.length < 8) {
+      toast.error('Password minimo 8 caracteres')
+      return
+    }
 
-      toast.success(
-        result.invited
-          ? `Invitacion enviada a ${result.email}`
-          : `Usuario ${result.email} actualizado`,
-      )
+    setUserActionBusy(true)
+    try {
+      if (userActionMode === 'invite') {
+        const result = await adminUsers.inviteUser({
+          email: inviteEmail,
+          fullName: inviteFullName,
+          role: inviteRole,
+          isGlobalSuperAdmin: inviteGlobalSuperAdmin,
+        })
+
+        if (result.invited) {
+          toast.success(`Invitacion enviada a ${result.email}`)
+        } else if (result.actionLink) {
+          try {
+            await navigator.clipboard.writeText(result.actionLink)
+            toast.message(`No se pudo enviar email, link copiado para ${result.email}`)
+          } catch {
+            toast.message(`No se pudo enviar email. Link manual generado para ${result.email}`)
+          }
+        } else {
+          toast.success(`Usuario ${result.email} actualizado`)
+        }
+      } else {
+        const result = await adminUsers.createUser({
+          email: inviteEmail,
+          fullName: inviteFullName,
+          role: inviteRole,
+          password: createPassword,
+          isGlobalSuperAdmin: inviteGlobalSuperAdmin,
+        })
+
+        toast.success(
+          result.created
+            ? `Usuario ${result.email} creado y activado`
+            : `Usuario ${result.email} actualizado y activado`,
+        )
+      }
+
       setInviteEmail('')
       setInviteFullName('')
       setInviteRole('BODEGUERO')
       setInviteGlobalSuperAdmin(false)
+      setCreatePassword('')
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'No se pudo invitar usuario')
+      toast.error(error instanceof Error ? error.message : 'No se pudo gestionar usuario')
     } finally {
-      setInviteBusy(false)
+      setUserActionBusy(false)
+    }
+  }
+
+  async function onResendInvite(email: string) {
+    setResendBusyEmail(email)
+    try {
+      const result = await adminUsers.resendInvite(email)
+
+      if (result.resent) {
+        toast.success(`Invitacion reenviada a ${result.email}`)
+        return
+      }
+
+      if (result.actionLink) {
+        try {
+          await navigator.clipboard.writeText(result.actionLink)
+          toast.message(`Link de invitacion copiado para ${result.email}`)
+        } catch {
+          toast.message(`Link manual generado para ${result.email}`)
+        }
+      } else {
+        toast.error(`No se pudo reenviar invitacion para ${result.email}`)
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo reenviar invitacion')
+    } finally {
+      setResendBusyEmail(null)
     }
   }
 
@@ -531,6 +591,23 @@ function App() {
 
                   {adminUsers.canManageUsers && (
                     <div className="grid gap-3 rounded-lg border p-3">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <Button
+                          variant={userActionMode === 'invite' ? 'default' : 'secondary'}
+                          onClick={() => setUserActionMode('invite')}
+                          disabled={userActionBusy}
+                        >
+                          Invitacion por email
+                        </Button>
+                        <Button
+                          variant={userActionMode === 'create' ? 'default' : 'secondary'}
+                          onClick={() => setUserActionMode('create')}
+                          disabled={userActionBusy}
+                        >
+                          Crear directo con password
+                        </Button>
+                      </div>
+
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Input
                           placeholder="Email usuario"
@@ -543,6 +620,15 @@ function App() {
                           onChange={(event) => setInviteFullName(event.target.value)}
                         />
                       </div>
+
+                      {userActionMode === 'create' && (
+                        <Input
+                          type="password"
+                          placeholder="Password temporal (minimo 8)"
+                          value={createPassword}
+                          onChange={(event) => setCreatePassword(event.target.value)}
+                        />
+                      )}
 
                       <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
                         <Select value={inviteRole} onValueChange={(value) => setInviteRole(value as Role)}>
@@ -570,12 +656,16 @@ function App() {
 
                       <Button
                         onClick={() => {
-                          void onInviteUser()
+                          void onSubmitUserAction()
                         }}
-                        disabled={inviteBusy}
+                        disabled={userActionBusy}
                       >
                         <UserRoundPlus className="mr-2 h-4 w-4" />
-                        {inviteBusy ? 'Procesando...' : 'Invitar o activar'}
+                        {userActionBusy
+                          ? 'Procesando...'
+                          : userActionMode === 'invite'
+                            ? 'Invitar o activar'
+                            : 'Crear / actualizar usuario'}
                       </Button>
                     </div>
                   )}
@@ -600,10 +690,28 @@ function App() {
                           <div className="mt-2 flex flex-wrap gap-2">
                             <Badge variant="outline">{entry.role}</Badge>
                             {!entry.isActive && <Badge variant="destructive">Inactivo</Badge>}
+                            {entry.pendingInvite && <Badge variant="secondary">Invitacion pendiente</Badge>}
                             {entry.isGlobalSuperAdmin && (
                               <Badge className="bg-emerald-700 hover:bg-emerald-700">Global SuperAdmin</Badge>
                             )}
                           </div>
+                          {entry.pendingInvite && adminUsers.canManageUsers && (
+                            <div className="mt-3">
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={Boolean(resendBusyEmail) || userActionBusy}
+                                onClick={() => {
+                                  void onResendInvite(entry.email)
+                                }}
+                              >
+                                <RefreshCcw className="mr-2 h-4 w-4" />
+                                {resendBusyEmail === entry.email
+                                  ? 'Reenviando...'
+                                  : 'Reenviar invitacion'}
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </CardContent>

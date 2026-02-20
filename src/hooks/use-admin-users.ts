@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { inviteCompanyUser, listCompanyUsers, type AdminCompanyUser } from '@/lib/admin-users'
+import {
+  createCompanyUser,
+  inviteCompanyUser,
+  listCompanyUsers,
+  resendCompanyInvite,
+  type AdminCompanyUser,
+} from '@/lib/admin-users'
 import { requireSupabase, supabase } from '@/lib/supabase'
 import type { Role } from '@/types/domain'
 
@@ -15,6 +21,14 @@ export interface InviteFormInput {
   fullName?: string
   isGlobalSuperAdmin?: boolean
   redirectTo?: string
+}
+
+export interface CreateUserFormInput {
+  email: string
+  role: Role
+  password: string
+  fullName?: string
+  isGlobalSuperAdmin?: boolean
 }
 
 type CompanyMembershipRole = {
@@ -36,7 +50,11 @@ export interface UseAdminUsersState {
   loadingUsers: boolean
   refreshCompanies: () => Promise<void>
   refreshUsers: () => Promise<void>
-  inviteUser: (input: InviteFormInput) => Promise<{ invited: boolean; email: string }>
+  inviteUser: (
+    input: InviteFormInput,
+  ) => Promise<{ invited: boolean; email: string; pendingInvitation: boolean; actionLink: string | null }>
+  createUser: (input: CreateUserFormInput) => Promise<{ created: boolean; email: string }>
+  resendInvite: (email: string) => Promise<{ email: string; resent: boolean; actionLink: string | null }>
 }
 
 export function useAdminUsers(user: User | null): UseAdminUsersState {
@@ -151,7 +169,9 @@ export function useAdminUsers(user: User | null): UseAdminUsersState {
     }
   }, [canManageUsers, selectedCompanyId, user])
 
-  async function inviteUser(input: InviteFormInput): Promise<{ invited: boolean; email: string }> {
+  async function inviteUser(
+    input: InviteFormInput,
+  ): Promise<{ invited: boolean; email: string; pendingInvitation: boolean; actionLink: string | null }> {
     if (!selectedCompanyId) {
       throw new Error('Seleccione una empresa')
     }
@@ -172,6 +192,53 @@ export function useAdminUsers(user: User | null): UseAdminUsersState {
     return {
       invited: response.user.invited,
       email: response.user.email,
+      pendingInvitation: response.user.pendingInvitation,
+      actionLink: response.user.actionLink,
+    }
+  }
+
+  async function createUser(input: CreateUserFormInput): Promise<{ created: boolean; email: string }> {
+    if (!selectedCompanyId) {
+      throw new Error('Seleccione una empresa')
+    }
+    if (!canManageUsers) {
+      throw new Error('No autorizado para gestionar usuarios')
+    }
+
+    const response = await createCompanyUser({
+      companyId: selectedCompanyId,
+      email: input.email,
+      role: input.role,
+      password: input.password,
+      fullName: input.fullName,
+      isGlobalSuperAdmin: input.isGlobalSuperAdmin,
+    })
+
+    setUsers(response.users)
+    return {
+      created: response.user.created,
+      email: response.user.email,
+    }
+  }
+
+  async function resendInvite(email: string): Promise<{ email: string; resent: boolean; actionLink: string | null }> {
+    if (!selectedCompanyId) {
+      throw new Error('Seleccione una empresa')
+    }
+    if (!canManageUsers) {
+      throw new Error('No autorizado para gestionar usuarios')
+    }
+
+    const response = await resendCompanyInvite({
+      companyId: selectedCompanyId,
+      email,
+    })
+
+    await refreshUsers()
+    return {
+      email: response.email,
+      resent: response.resent,
+      actionLink: response.actionLink,
     }
   }
 
@@ -198,5 +265,7 @@ export function useAdminUsers(user: User | null): UseAdminUsersState {
     refreshCompanies,
     refreshUsers,
     inviteUser,
+    createUser,
+    resendInvite,
   }
 }

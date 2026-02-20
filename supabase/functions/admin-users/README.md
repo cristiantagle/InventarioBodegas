@@ -2,7 +2,9 @@
 
 Gestiona usuarios por empresa desde la app:
 - `action: "list"`: lista miembros y sus roles de una empresa.
-- `action: "invite"`: invita/activa usuario, asigna rol y opcionalmente marca superadmin global.
+- `action: "invite"`: invita usuario (o reactiva pendiente), asigna rol y opcionalmente marca superadmin global.
+- `action: "create"`: crea/actualiza usuario con password (activacion inmediata), asigna rol.
+- `action: "resend"`: reenvia invitacion a un usuario pendiente; si falla el envio, genera link manual.
 
 ## Seguridad
 - Requiere JWT del usuario llamante.
@@ -24,5 +26,15 @@ supabase functions deploy admin-users --project-ref <project_ref>
   "role": "SUPERVISOR",
   "fullName": "Pato Solt",
   "isGlobalSuperAdmin": false
+}
+```
+
+```json
+{
+  "action": "create",
+  "companyId": "be803fb9-11c8-44ca-b47e-711390217d88",
+  "email": "nuevo@empresa.com",
+  "password": "TempPass#2026",
+  "role": "BODEGUERO"
 }
 ```

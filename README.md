@@ -45,10 +45,13 @@ Copiar `.env.example` y completar:
 2. Ejecutar `supabase/seed.sql`.
 3. Reemplazar UUID de usuarios seed por `auth.users` reales.
 4. Desplegar Edge Function de gestion de usuarios:
-   - `supabase functions deploy admin-users --project-ref <project_ref>`
+   - `supabase functions deploy admin-users --project-ref <project_ref> --no-verify-jwt`
 5. Verificar que tu usuario tenga:
    - `company_memberships.role = SUPERADMIN` en su empresa
    - `global_roles.is_super_admin = true` si quieres permiso global
+6. Auth (para links de invitacion correctos):
+   - `site_url`: `https://inventario-bodegas.vercel.app`
+   - `uri_allow_list`: incluir Vercel y localhost de desarrollo.
 
 ## Flujo operativo
 1. Cargar inventario inicial (INITIAL aprobado).
@@ -61,6 +64,7 @@ Copiar `.env.example` y completar:
 ## Gestion de usuarios desde app
 - Inicia sesion en el bloque `Sesion Supabase` (email/password).
 - Ve a la pestana `Usuarios`.
-- Selecciona empresa y usa `Invitar o activar`.
-- Si el usuario no existe, se envia invitacion por email.
-- Si ya existe, se reactiva/actualiza rol en la empresa.
+- Selecciona empresa y el modo:
+  - `Invitacion por email`: envia/reenvia invitacion y asigna rol.
+  - `Crear directo con password`: crea o actualiza usuario con activacion inmediata.
+- En la lista puedes usar `Reenviar invitacion` para usuarios pendientes.
